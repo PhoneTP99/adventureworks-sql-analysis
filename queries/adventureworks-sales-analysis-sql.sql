@@ -100,14 +100,89 @@ Business Question:
 Which products generate the most revenue each month?
 */
 
-SELECT P.Name,
-       FORMAT(SOH.OrderDate,'yyyy-MM') AS MonthYear,
-       SUM(SOD.LineTotal) AS TotalRevenue,
-       RANK() OVER(PARTITION BY FORMAT(SOH.OrderDate,'yyyy-MM') ORDER BY SUM(SOD.LineTotal) DESC) AS Rank
+WITH MonthlyProductRevenue AS (
+    SELECT 
+           P.Name AS ProductName,
+           FORMAT(SOH.OrderDate,'yyyy-MM') AS MonthYear,
+           SUM(SOD.LineTotal) AS TotalRevenue
+    FROM Sales.SalesOrderDetail SOD
+    JOIN Sales.SalesOrderHeader SOH
+        ON SOD.SalesOrderID = SOH.SalesOrderID
+    JOIN Production.Product P
+        ON P.ProductID = SOD.ProductID
+    GROUP BY P.Name, FORMAT(SOH.OrderDate,'yyyy-MM')
+),
+RankedProducts AS (
+    SELECT *,
+           RANK() OVER(PARTITION BY MonthYear ORDER BY TotalRevenue DESC) AS RankPerMonth
+    FROM MonthlyProductRevenue
+)
+SELECT *
+FROM RankedProducts
+WHERE RankPerMonth <= 3
+ORDER BY MonthYear, RankPerMonth;
+
+
+/*
+Business Question:
+Which product categories generate the most revenue?
+*/
+
+
+SELECT PC.Name AS Category ,
+       SUM(SOD.LineTotal) AS TotalRevenue
 FROM Sales.SalesOrderDetail SOD
-JOIN Sales.SalesOrderHeader SOH
-ON SOD.SalesOrderID = SOH.SalesOrderID
 JOIN Production.Product P
-ON P.ProductID = SOD.ProductID
-GROUP BY P.Name , FORMAT(SOH.OrderDate,'yyyy-MM') 
-ORDER BY FORMAT(SOH.OrderDate,'yyyy-MM') ASC,TotalRevenue DESC;
+    ON SOD.ProductID = P.ProductID
+JOIN Production.ProductSubcategory PSC
+    ON P.ProductSubcategoryID = PSC.ProductSubcategoryID
+JOIN Production.ProductCategory PC
+    ON PC.ProductCategoryID = PSC.ProductCategoryID
+GROUP BY PC.Name  
+ORDER BY TotalRevenue DESC;
+
+
+/*
+Business Question:
+Which sales territory has the highest average order value (AOV)?
+*/
+
+SELECT TOP 5
+       ST.Name AS TerritoryName,
+       COUNT(SOH.SalesOrderID) AS TotalOrders,
+       AVG(SOH.TotalDue) AS AOV
+FROM Sales.SalesOrderHeader SOH
+JOIN Sales.SalesTerritory ST
+    ON ST.TerritoryID = SOH.TerritoryID
+GROUP BY ST.Name
+ORDER BY AOV DESC;
+
+
+/*
+Business Question:
+Which customers place the most orders?
+*/
+
+
+SELECT TOP 10
+       C.CustomerID,
+       CASE 
+            WHEN C.PersonID IS NOT NULL 
+                 THEN P.FirstName + ' ' + P.LastName
+            ELSE S.Name
+       END AS CustomerName,
+       COUNT(SOH.SalesOrderID) AS TotalOrders
+FROM Sales.SalesOrderHeader SOH
+JOIN Sales.Customer C
+    ON SOH.CustomerID = C.CustomerID
+LEFT JOIN Person.Person P
+    ON C.PersonID = P.BusinessEntityID
+LEFT JOIN Sales.Store S
+    ON C.StoreID = S.BusinessEntityID
+GROUP BY 
+       C.CustomerID,
+       P.FirstName,
+       P.LastName,
+       S.Name,
+       C.PersonID
+ORDER BY TotalOrders DESC;

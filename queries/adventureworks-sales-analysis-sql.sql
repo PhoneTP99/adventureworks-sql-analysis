@@ -186,3 +186,50 @@ GROUP BY
        S.Name,
        C.PersonID
 ORDER BY TotalOrders DESC;
+
+/*
+Business Question:
+Which products are frequently purchased together?
+*/
+
+SELECT TOP 20
+       X.Name AS "PRODUCT A NAME",
+       Y.Name AS "PRODUCT B NAME",
+       COUNT(*) AS TotalTime
+FROM Sales.SalesOrderDetail A
+JOIN Sales.SalesOrderDetail B
+    ON A.SalesOrderID = B.SalesOrderID
+JOIN Production.Product X
+    ON X.ProductID = A.ProductID
+JOIN Production.Product Y
+    ON Y.ProductID = B.ProductID
+WHERE A.ProductID <> B.ProductID AND
+      A.ProductID < B.ProductID
+GROUP BY X.Name , Y.Name
+ORDER BY TotalTime DESC
+
+
+/*
+Business Question:
+Goal:
+Calculate month-over-month revenue growth.
+*/
+
+WITH MonthlyRevenue AS (
+    SELECT FORMAT(OrderDate,'yyyy-MM') AS MonthYear ,
+       SUM(TotalDue) AS TotalRevenue 
+    FROM Sales.SalesOrderHeader
+    GROUP BY FORMAT(OrderDate,'yyyy-MM')
+),
+LagMonthlyRevenue AS (
+    SELECT *,
+            LAG(TotalRevenue) OVER(ORDER BY MonthYear) AS PreviousMonthRevenue
+    FROM MonthlyRevenue
+)
+
+SELECT MonthYear,
+       TotalRevenue,
+       (TotalRevenue-PreviousMonthRevenue) AS GrowthAmount,
+       ROUND((TotalRevenue - PreviousMonthRevenue) / PreviousMonthRevenue * 100, 2) AS GrowthPercent
+FROM LagMonthlyRevenue
+ORDER BY MonthYear;

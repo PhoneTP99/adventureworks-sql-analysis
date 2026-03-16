@@ -455,3 +455,108 @@ GROUP BY SOH.CustomerID ,
          P.LastName ,
          S.Name 
 ORDER BY DaysSinceLastOrder ASC;
+
+
+/*
+Business Question — Category Sales Trend & Risk
+Question
+Which product categories are at risk due to declining sales over the past months?
+
+Goal:
+Identify categories with falling revenue.
+Flag them for management action or promotion.
+*/
+
+
+
+WITH monthly_category_revenue AS (
+
+    SELECT
+        pc.Name AS category_name,
+        FORMAT(soh.OrderDate, 'yyyy-MM') AS month_year,
+        SUM(sod.LineTotal) AS total_revenue
+
+    FROM Sales.SalesOrderDetail sod
+
+    JOIN Production.Product p
+        ON p.ProductID = sod.ProductID
+
+    JOIN Production.ProductSubcategory ps
+        ON ps.ProductSubcategoryID = p.ProductSubcategoryID
+
+    JOIN Production.ProductCategory pc
+        ON pc.ProductCategoryID = ps.ProductCategoryID
+
+    JOIN Sales.SalesOrderHeader soh
+        ON soh.SalesOrderID = sod.SalesOrderID
+
+    GROUP BY
+        pc.Name,
+        FORMAT(soh.OrderDate, 'yyyy-MM')
+
+),
+
+category_growth AS (
+
+    SELECT
+        *,
+        LAG(total_revenue) OVER(
+            PARTITION BY category_name
+            ORDER BY month_year
+        ) AS previous_month_revenue
+
+    FROM monthly_category_revenue
+
+)
+
+SELECT
+    *,
+    (total_revenue - previous_month_revenue)
+        * 100.0 / NULLIF(previous_month_revenue,0) AS month_over_month_growth,
+
+    CASE
+        WHEN (total_revenue - previous_month_revenue)
+             * 100.0 / NULLIF(previous_month_revenue,0) < 0
+        THEN 'At Risk'
+        ELSE 'Stable'
+    END AS risk_status
+
+FROM category_growth
+ORDER BY
+    category_name,
+    month_year;
+
+
+/*
+Business Question — Product Launch & Sales Performance
+Question:
+How do newly launched products perform over time? Which ones are trending or underperforming?
+*/
+
+WITH product_first_sale AS (
+    SELECT
+        p.Name AS ProductName,
+        FORMAT(MIN(soh.OrderDate), 'yyyy-MM') AS FirstSaleMonth,
+        SUM(sod.LineTotal) AS TotalRevenue
+    FROM Sales.SalesOrderDetail sod
+    JOIN Sales.SalesOrderHeader soh
+        ON soh.SalesOrderID = sod.SalesOrderID
+    JOIN Production.Product p
+        ON p.ProductID = sod.ProductID
+    GROUP BY p.Name
+),
+ranked_products AS (
+    SELECT *,
+           RANK() OVER(
+               PARTITION BY FirstSaleMonth
+               ORDER BY TotalRevenue DESC
+           ) AS Rank
+    FROM product_first_sale
+)
+SELECT *
+FROM ranked_products
+WHERE Rank <= 3
+ORDER BY FirstSaleMonth, Rank; 
+
+
+
